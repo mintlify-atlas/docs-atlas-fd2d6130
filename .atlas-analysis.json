@@ -1,0 +1,77 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Broccoli",
+  "projectDescription": "A CLI tool that uses brotli compression to embed static files as a virtual file system in Go executables.",
+  "theme": "aspen",
+  "primaryColor": "#4CAF50",
+  "lightColor": "#81C784",
+  "darkColor": "#388E3C",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": [
+          "introduction",
+          "installation",
+          "quickstart"
+        ]
+      },
+      {
+        "group": "CLI Reference",
+        "pages": [
+          "cli/commands",
+          "cli/options",
+          "cli/examples"
+        ]
+      },
+      {
+        "group": "API Reference",
+        "pages": [
+          "api/broccoli",
+          "api/file",
+          "api/server"
+        ]
+      },
+      {
+        "group": "Guides",
+        "pages": [
+          "guides/usage",
+          "guides/http-server",
+          "guides/development-mode",
+          "guides/compression-levels"
+        ]
+      },
+      {
+        "group": "Resources",
+        "pages": [
+          "performance",
+          "comparison",
+          "troubleshooting",
+          "faq"
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Brotli compression for 13-25% smaller binaries",
+    "Multiple source directory bundling via go generate",
+    "Optional lazy decompression on first read",
+    "WebAssembly (wasm/js) architecture support",
+    ".gitignore integration for file exclusion",
+    "HTTP file server support",
+    "Virtual file system with Walk, Open, and Stat methods",
+    "Development mode for rapid iteration",
+    "Configurable compression levels (1-11)",
+    "Glob pattern support for include/exclude"
+  ],
+  "publicApiSurface": [
+    "broccoli CLI command",
+    "Broccoli.Open(path) - Opens a file from the virtual file system",
+    "Broccoli.Stat(path) - Returns file information",
+    "Broccoli.Walk(root, walkFn) - Walks the file tree",
+    "Broccoli.Serve(dir) - Returns an http.Handler for serving files",
+    "Broccoli.Development(mode) - Enables/disables development mode",
+    "fs.New(opt, bundle) - Creates a new virtual file system from bundle",
+    "fs.Pack(files, quality) - Compresses files for bundling"
+  ]
+}
