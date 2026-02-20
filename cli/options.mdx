@@ -166,7 +166,16 @@ description: 'Detailed reference of all broccoli CLI flags and options'
 ## Other Options
 
 <ParamField path="-v" type="boolean" default="false">
-  Enable verbose output (undocumented in help, but available in source).
+  Enable verbose output during generation. When enabled, broccoli will print:
+  - Total bytes read from source files
+  - Total bytes after compression
+  - Files being included or excluded by filters
+  
+  Useful for debugging and understanding what's being bundled.
+  
+  ```bash
+  broccoli -src assets -v
+  ```
 </ParamField>
 
 ## Option Validation
