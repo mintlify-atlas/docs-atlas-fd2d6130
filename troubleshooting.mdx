@@ -1,0 +1,313 @@
+---
+title: Troubleshooting
+description: Common issues and solutions when using Broccoli
+---
+
+## Common Issues
+
+### Build and Generation Issues
+
+#### "file or directory not found"
+
+<Warning>
+This error occurs when the source path specified with `-src` doesn't exist or is inaccessible.
+</Warning>
+
+**Solution:**
+
+```bash
+# Verify the directory exists
+ls -la public/
+
+# Use correct path relative to where go generate runs
+//go:generate broccoli -src public -o assets
+```
+
+<Note>
+The `-src` path is relative to the directory where `go generate` is executed, typically the package directory.
+</Note>
+
+---
+
+#### "duplicate path in the input"
+
+This error appears when the same file path is included multiple times, either:
+- Listed multiple times in `-src`
+- Appears in overlapping directories
+
+**Solution:**
+
+```bash
+# Bad - both include same files
+broccoli -src public,public/assets
+
+# Good - use single root or non-overlapping paths
+broccoli -src public
+broccoli -src public,templates
+```
+
+---
+
+#### "no buildable Go files"
+
+<Warning>
+Broccoli needs at least one `.go` file in the package to determine the package name.
+</Warning>
+
+**Solution:**
+
+Create a minimal Go file in the directory:
+
+```go
+package assets
+
+//go:generate broccoli -src ../public -o assets
+```
+
+---
+
+#### "cannot open .gitignore"
+
+When using `-gitignore` flag, this error occurs if a `.gitignore` file is malformed or unreadable.
+
+**Solution:**
+
+```bash
+# Check .gitignore files are valid
+find . -name .gitignore -exec cat {} \;
+
+# Or disable gitignore parsing
+broccoli -src assets  # omit -gitignore flag
+```
+
+---
+
+### Runtime Issues
+
+#### "could not decompress" panic
+
+This panic occurs when the embedded bundle data is corrupted or incompatible.
+
+**Causes:**
+- Generated file was manually edited
+- Version mismatch between broccoli tool and library
+- Corrupted build artifact
+
+**Solution:**
+
+```bash
+# Regenerate the bundle
+go generate ./...
+
+# Ensure consistent versions
+go get -u aletheia.icu/broccoli
+go install aletheia.icu/broccoli
+```
+
+<Warning>
+Never manually edit generated `.gen.go` files. Always regenerate them using the broccoli tool.
+</Warning>
+
+---
+
+#### File not found at runtime
+
+Files that should be embedded return `os.ErrNotExist` when accessed.
+
+**Solution:**
+
+```go
+// Check file paths - broccoli normalizes paths
+f, err := assets.Open("index.html")     // Good
+f, err := assets.Open("./index.html")   // Also works (normalized)
+f, err := assets.Open("/index.html")    // Also works (normalized)
+
+// Debug: Walk all embedded files
+assets.Walk("", func(path string, info os.FileInfo, err error) error {
+    fmt.Println("Embedded:", path)
+    return nil
+})
+```
+
+<Note>
+Broccoli automatically normalizes paths by removing leading `./` and `/` prefixes and trailing `/` suffixes.
+</Note>
+
+---
+
+#### High memory usage
+
+With large asset bundles, memory usage may be higher than expected.
+
+**Solution:**
+
+Enable optional decompression to keep files compressed until accessed:
+
+```go
+//go:generate broccoli -src assets -opt
+```
+
+This trades some CPU time on first access for significantly lower memory usage.
+
+---
+
+### WebAssembly Issues
+
+#### Build fails for wasm/js target
+
+<Note>
+Broccoli is designed to support WebAssembly. If you encounter issues, it's usually related to other dependencies.
+</Note>
+
+**Solution:**
+
+```bash
+# Verify broccoli works with WASM
+GOOS=js GOOS=wasm go build
+
+# Check for incompatible dependencies
+go list -f '{{.ImportPath}}: {{.Imports}}' ./... | grep http
+```
+
+---
+
+### Performance Issues
+
+#### Slow compilation times
+
+Broccoli compression can take time with large asset bundles.
+
+**Solutions:**
+
+1. **Lower compression level for development:**
+
+```bash
+broccoli -src assets -quality 5
+```
+
+2. **Use development mode to skip bundling:**
+
+```go
+if os.Getenv("DEV") == "true" {
+    assets.Development(true)
+}
+```
+
+3. **Exclude unnecessary files:**
+
+```bash
+broccoli -src assets -exclude "*.map,*.md,*.txt"
+```
+
+---
+
+#### Slow startup time
+
+With default settings, all files are decompressed at startup.
+
+**Solution:**
+
+Enable optional decompression:
+
+```go
+//go:generate broccoli -src assets -opt
+```
+
+Files will be decompressed on first access instead of at startup.
+
+---
+
+## Debugging Tips
+
+### Enable Verbose Output
+
+Use the `-v` flag to see detailed generation information:
+
+```bash
+//go:generate broccoli -src assets -v
+```
+
+This shows:
+- Total bytes read from source files
+- Total bytes after compression
+- Files being included/excluded
+
+### Verify Generated Bundle
+
+Check the generated file was created:
+
+```bash
+# Look for .gen.go files
+find . -name "*.gen.go"
+
+# Check file size
+ls -lh public.gen.go
+```
+
+### Check File Inclusion
+
+List files that will be bundled:
+
+```bash
+# Simulate with find
+find public/ -type f
+
+# With include filter
+find public/ -type f -name "*.html" -o -name "*.css"
+
+# With gitignore
+git ls-files public/
+```
+
+### Test Bundle Access
+
+Write a simple test:
+
+```go
+func TestBundle(t *testing.T) {
+    // Walk all files
+    var count int
+    assets.Walk("", func(path string, info os.FileInfo, err error) error {
+        if err != nil {
+            return err
+        }
+        if !info.IsDir() {
+            count++
+            t.Logf("Found: %s (%d bytes)", path, info.Size())
+        }
+        return nil
+    })
+    
+    if count == 0 {
+        t.Error("No files in bundle")
+    }
+}
+```
+
+---
+
+## Getting Help
+
+### Check the Documentation
+
+- [Installation](/installation) - Setup and requirements
+- [Quick Start](/quickstart) - Basic usage
+- [CLI Options](/cli/options) - All available flags
+- [API Reference](/api/broccoli) - Package documentation
+
+### Review Examples
+
+See the [CLI Examples](/cli/examples) page for common usage patterns.
+
+### Report Issues
+
+If you've found a bug:
+
+1. Check if it's already reported
+2. Provide minimal reproduction steps
+3. Include broccoli version: `broccoli -h`
+4. Include Go version: `go version`
+
+<Note>
+Visit the [Broccoli repository](https://vcs.aletheia.icu/lads/broccoli) to report issues or contribute improvements.
+</Note>

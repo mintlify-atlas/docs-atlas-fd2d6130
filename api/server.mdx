@@ -1,0 +1,379 @@
+---
+title: "Server"
+description: "HTTP server implementation for serving Broccoli file systems"
+---
+
+## Overview
+
+The `Server` type implements `http.FileSystem` and provides HTTP serving functionality for the Broccoli virtual file system. It wraps a Broccoli instance with a directory prefix, allowing you to serve files over HTTP.
+
+```go
+type Server struct {
+    // private fields
+}
+```
+
+<Note>
+`Server` instances are created via the `Broccoli.Serve()` method. You should never create Server instances directly.
+</Note>
+
+## Creating a Server
+
+Use the `Broccoli.Serve()` method to create an HTTP server:
+
+```go
+func (br *Broccoli) Serve(dir string) http.Handler
+```
+
+<ParamField path="dir" type="string" required>
+  The directory prefix to prepend to all requested file paths. Leading and trailing slashes are automatically trimmed.
+</ParamField>
+
+<ResponseField name="http.Handler" type="http.Handler">
+  An HTTP handler that serves files from the virtual file system. This is actually a `Server` instance wrapped with `http.FileServer`.
+</ResponseField>
+
+## Methods
+
+### Open
+
+Opens a file from the virtual file system, prepending the server's configured prefix to the requested path.
+
+```go
+func (s *Server) Open(filepath string) (http.File, error)
+```
+
+<ParamField path="filepath" type="string" required>
+  The file path to open. The server's prefix will be automatically prepended to this path.
+</ParamField>
+
+<ResponseField name="http.File" type="http.File">
+  A file handle implementing the `http.File` interface.
+</ResponseField>
+
+<ResponseField name="error" type="error">
+  Returns `os.ErrNotExist` if the file is not found, or any error from the underlying `Broccoli.Open()` call.
+</ResponseField>
+
+<Note>
+This method is typically called internally by `http.FileServer`. You rarely need to call it directly.
+</Note>
+
+```go
+// Server created with prefix "public"
+srv := br.Serve("public")
+
+// When http.FileServer requests "/styles/main.css"
+// Server.Open internally calls br.Open("public/styles/main.css")
+```
+
+## HTTP Server Usage
+
+### Basic HTTP Server
+
+The simplest way to serve static files over HTTP:
+
+```go
+package main
+
+import (
+    "log"
+    "net/http"
+)
+
+//go:generate broccoli -src=public -o assets -var br
+
+func main() {
+    // Serve files from the "public" directory prefix on port 8080
+    log.Println("Server starting on :8080")
+    http.ListenAndServe(":8080", br.Serve("public"))
+}
+```
+
+<Note>
+With this setup:
+- Request to `http://localhost:8080/index.html` serves `public/index.html` from the bundle
+- Request to `http://localhost:8080/css/style.css` serves `public/css/style.css` from the bundle
+</Note>
+
+### With URL Prefix
+
+Serve static assets under a specific URL path:
+
+```go
+package main
+
+import (
+    "log"
+    "net/http"
+)
+
+//go:generate broccoli -src=static -o assets -var br
+
+func main() {
+    mux := http.NewServeMux()
+    
+    // Serve static files under /static/ URL path
+    mux.Handle("/static/", http.StripPrefix("/static/", br.Serve("static")))
+    
+    log.Println("Server starting on :8080")
+    http.ListenAndServe(":8080", mux)
+}
+```
+
+<Note>
+`http.StripPrefix` removes the `/static/` prefix from the URL before passing it to the Server, so:
+- Request to `http://localhost:8080/static/js/app.js` serves `static/js/app.js` from the bundle
+</Note>
+
+### Multiple Directory Prefixes
+
+Serve different directories under different URL paths:
+
+<Tabs>
+  <Tab title="Multiple Bundles">
+    ```go
+    //go:generate broccoli -src=public,assets,templates -o br -var br
+    
+    func main() {
+        mux := http.NewServeMux()
+        
+        // Serve different directories under different paths
+        mux.Handle("/public/", http.StripPrefix("/public/", br.Serve("public")))
+        mux.Handle("/assets/", http.StripPrefix("/assets/", br.Serve("assets")))
+        mux.Handle("/templates/", http.StripPrefix("/templates/", br.Serve("templates")))
+        
+        http.ListenAndServe(":8080", mux)
+    }
+    ```
+  </Tab>
+  <Tab title="Mixed Routes">
+    ```go
+    func main() {
+        mux := http.NewServeMux()
+        
+        // Static assets from bundle
+        mux.Handle("/static/", http.StripPrefix("/static/", br.Serve("public")))
+        
+        // API endpoints
+        mux.HandleFunc("/api/users", handleUsers)
+        mux.HandleFunc("/api/posts", handlePosts)
+        
+        // Root handler
+        mux.HandleFunc("/", handleIndex)
+        
+        http.ListenAndServe(":8080", mux)
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Development Mode
+
+Combine with development mode for rapid iteration:
+
+```go
+package main
+
+import (
+    "log"
+    "net/http"
+    "os"
+)
+
+//go:generate broccoli -src=public -o assets -var br
+
+func main() {
+    // Enable development mode when not in production
+    if os.Getenv("PRODUCTION") == "" {
+        br.Development(true)
+        log.Println("Running in development mode")
+    }
+    
+    // Serve files (from bundle in production, from disk in development)
+    http.ListenAndServe(":8080", br.Serve("public"))
+}
+```
+
+<Note>
+In development mode:
+- File changes are reflected immediately without rebuilding
+- The server reads from the actual file system instead of the embedded bundle
+- Perfect for front-end development with live-reload workflows
+</Note>
+
+### Custom Middleware
+
+Wrap the server with custom middleware:
+
+<Tabs>
+  <Tab title="Logging">
+    ```go
+    func loggingMiddleware(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            log.Printf("%s %s", r.Method, r.URL.Path)
+            next.ServeHTTP(w, r)
+        })
+    }
+    
+    func main() {
+        handler := loggingMiddleware(br.Serve("public"))
+        http.ListenAndServe(":8080", handler)
+    }
+    ```
+  </Tab>
+  <Tab title="Caching Headers">
+    ```go
+    func cacheMiddleware(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            // Set cache headers for static assets
+            w.Header().Set("Cache-Control", "public, max-age=31536000")
+            next.ServeHTTP(w, r)
+        })
+    }
+    
+    func main() {
+        handler := cacheMiddleware(br.Serve("static"))
+        http.ListenAndServe(":8080", handler)
+    }
+    ```
+  </Tab>
+  <Tab title="CORS">
+    ```go
+    func corsMiddleware(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            w.Header().Set("Access-Control-Allow-Origin", "*")
+            w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+            w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+            
+            if r.Method == "OPTIONS" {
+                w.WriteHeader(http.StatusOK)
+                return
+            }
+            
+            next.ServeHTTP(w, r)
+        })
+    }
+    
+    func main() {
+        handler := corsMiddleware(br.Serve("public"))
+        http.ListenAndServe(":8080", handler)
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Features
+
+The `Server` type, when wrapped with `http.FileServer`, automatically provides:
+
+<CardGroup cols={2}>
+  <Card title="Content-Type Detection" icon="file-code">
+    Automatically sets the correct `Content-Type` header based on file extension
+  </Card>
+  <Card title="Range Requests" icon="arrows-left-right">
+    Supports HTTP range requests for partial content delivery (useful for video streaming)
+  </Card>
+  <Card title="Directory Listings" icon="folder-open">
+    Generates HTML directory listings for directories in the bundle
+  </Card>
+  <Card title="Conditional Requests" icon="clock">
+    Handles `If-Modified-Since` headers and returns 304 Not Modified when appropriate
+  </Card>
+  <Card title="Compression Ready" icon="file-zipper">
+    Files are already brotli-compressed in the bundle, ready for efficient serving
+  </Card>
+  <Card title="ETag Support" icon="tag">
+    Automatic ETag generation based on file modification time
+  </Card>
+</CardGroup>
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "log"
+    "net/http"
+    "os"
+    "time"
+)
+
+//go:generate broccoli -src=public,assets -o bundle -var br
+
+func loggingMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        start := time.Now()
+        log.Printf("[%s] %s %s", r.Method, r.URL.Path, time.Since(start))
+        next.ServeHTTP(w, r)
+    })
+}
+
+func main() {
+    // Enable development mode when not in production
+    if os.Getenv("PRODUCTION") == "" {
+        br.Development(true)
+        log.Println("Development mode enabled")
+    }
+    
+    mux := http.NewServeMux()
+    
+    // Serve public files at root
+    mux.Handle("/", loggingMiddleware(br.Serve("public")))
+    
+    // Serve assets under /assets/
+    mux.Handle("/assets/", loggingMiddleware(
+        http.StripPrefix("/assets/", br.Serve("assets")),
+    ))
+    
+    // API endpoints
+    mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte(`{"status":"ok"}`))
+    })
+    
+    log.Println("Server starting on :8080")
+    if err := http.ListenAndServe(":8080", mux); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use appropriate prefixes">
+    Choose directory prefixes that match your bundle structure. If you bundled files from a `public` directory, use `br.Serve("public")` to maintain the same path structure.
+  </Accordion>
+  
+  <Accordion title="Enable development mode conditionally">
+    Always gate development mode with an environment variable check to avoid accidentally serving from disk in production.
+    
+    ```go
+    if os.Getenv("PRODUCTION") == "" {
+        br.Development(true)
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Use StripPrefix for URL paths">
+    When serving under a URL prefix, always use `http.StripPrefix` to remove the prefix before passing requests to the Server.
+    
+    ```go
+    mux.Handle("/static/", http.StripPrefix("/static/", br.Serve("public")))
+    ```
+  </Accordion>
+  
+  <Accordion title="Set appropriate cache headers">
+    For production deployments, wrap the server with middleware that sets cache headers to reduce bandwidth and improve performance.
+  </Accordion>
+  
+  <Accordion title="Bundle multiple source directories">
+    Use the broccoli tool's ability to bundle multiple source directories and serve them with different prefixes for better organization.
+    
+    ```go
+    //go:generate broccoli -src=public,vendor,templates -o br -var br
+    ```
+  </Accordion>
+</AccordionGroup>

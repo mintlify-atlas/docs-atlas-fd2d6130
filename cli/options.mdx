@@ -1,0 +1,182 @@
+---
+title: 'CLI Options'
+description: 'Detailed reference of all broccoli CLI flags and options'
+---
+
+## Input Options
+
+<ParamField path="-src" type="string" default="public">
+  The input files and directories to embed.
+  
+  You can specify:
+  - A single directory: `-src assets`
+  - Multiple directories: `-src public,assets`
+  - Mix of directories and files: `-src public,extra.css,config.json`
+  
+  <Tip>
+  Multiple inputs are separated by commas with no spaces.
+  </Tip>
+</ParamField>
+
+## Output Options
+
+<ParamField path="-o" type="string" default="{input}.gen.go">
+  Name of the generated Go file.
+  
+  If not specified, broccoli automatically generates the filename based on the first input directory:
+  - Input `public` → Output `public.gen.go`
+  - Input `assets` → Output `assets.gen.go`
+  
+  The `.gen.go` suffix is automatically added if not present.
+  
+  **Examples:**
+  - `-o broccoli` → generates `broccoli.gen.go`
+  - `-o embed.gen.go` → generates `embed.gen.go`
+</ParamField>
+
+<ParamField path="-var" type="string" default="br">
+  Name of the exposed Go variable that provides access to the embedded file system.
+  
+  Must be a valid Go identifier (starts with a letter, contains only letters, numbers, and underscores).
+  
+  **Examples:**
+  - `-var assets` → Access files via `assets` variable
+  - `-var staticFS` → Access files via `staticFS` variable
+  
+  <Warning>
+  The variable name must follow Go naming conventions or broccoli will exit with an error.
+  </Warning>
+</ParamField>
+
+<ParamField path="-build" type="string" default="">
+  Compiler build tags (constraints) for the generated file.
+  
+  Use this to conditionally compile the embedded files based on platform, architecture, or custom tags.
+  
+  **Format:** `"os,arch os2,arch2"`
+  
+  **Examples:**
+  - `-build "linux,386 darwin,!cgo"` - Linux 32-bit or Darwin without cgo
+  - `-build "!windows"` - All platforms except Windows
+  - `-build "dev debug"` - Custom tags
+  
+  <Note>
+  Build tags are added as `// +build` directives at the top of the generated file.
+  </Note>
+</ParamField>
+
+## Filter Options
+
+<ParamField path="-include" type="string" default="">
+  Wildcard pattern for files to include. Only files matching this pattern will be embedded.
+  
+  **Format:** `"*.ext1,*.ext2"`
+  
+  **Examples:**
+  - `-include="*.html,*.css"` - Only HTML and CSS files
+  - `-include="*.wasm"` - Only WebAssembly files
+  - `-include="*.js,*.json"` - Only JavaScript and JSON files
+  
+  <Warning>
+  The `-include` and `-exclude` options are mutually exclusive. You cannot use both at the same time.
+  </Warning>
+</ParamField>
+
+<ParamField path="-exclude" type="string" default="">
+  Wildcard pattern for files to exclude. Files matching this pattern will not be embedded.
+  
+  **Format:** `"*.ext1,*.ext2"`
+  
+  **Examples:**
+  - `-exclude="*.wasm"` - Exclude WebAssembly files
+  - `-exclude="*.map,*.ts"` - Exclude source maps and TypeScript files
+  - `-exclude="*.md"` - Exclude markdown files
+  
+  <Warning>
+  The `-include` and `-exclude` options are mutually exclusive. You cannot use both at the same time.
+  </Warning>
+</ParamField>
+
+<ParamField path="-gitignore" type="boolean" default="false">
+  Enable `.gitignore` rules parsing in each directory.
+  
+  When enabled, broccoli will:
+  - Read `.gitignore` files in the source directories
+  - Automatically exclude files matched by gitignore patterns
+  - Process gitignore rules hierarchically (like git does)
+  
+  **Usage:**
+  ```bash
+  broccoli -gitignore
+  ```
+  
+  <Tip>
+  This is useful when you want to embed only files that are tracked by git, automatically excluding build artifacts, dependencies, and temporary files.
+  </Tip>
+</ParamField>
+
+## Compression Options
+
+<ParamField path="-quality" type="integer" default="11">
+  Brotli compression level (1-11).
+  
+  - **1** - Fastest compression, larger output
+  - **11** - Best compression, slower (default)
+  
+  Higher levels produce smaller files but take longer to compress. For production builds, the default level 11 is recommended.
+  
+  **Examples:**
+  - `-quality 6` - Balanced compression for development
+  - `-quality 11` - Maximum compression for production
+  
+  <Note>
+  Decompression speed is not significantly affected by compression level. Higher levels only impact build time.
+  </Note>
+</ParamField>
+
+<ParamField path="-opt" type="boolean" default="false">
+  Enable optional (lazy) decompression.
+  
+  When enabled:
+  - Files remain compressed in memory
+  - Decompression happens on first read
+  - Reduces initial memory footprint
+  - Slightly slower first access per file
+  
+  **Usage:**
+  ```bash
+  broccoli -opt
+  ```
+  
+  <Tip>
+  Use `-opt` for applications with many embedded files where only a subset is accessed during runtime. This reduces memory usage at the cost of slightly slower first access.
+  </Tip>
+  
+  **Without `-opt` (default):**
+  - All files are decompressed when the program starts
+  - Higher initial memory usage
+  - Faster file access
+  
+  **With `-opt`:**
+  - Files are decompressed on demand
+  - Lower initial memory usage
+  - Small delay on first access to each file
+</ParamField>
+
+## Other Options
+
+<ParamField path="-v" type="boolean" default="false">
+  Enable verbose output (undocumented in help, but available in source).
+</ParamField>
+
+## Option Validation
+
+Broccoli performs validation on options:
+
+- **Variable name:** Must be a valid Go identifier (letters, numbers, underscores; must start with a letter)
+- **Quality level:** Must be between 1 and 11 (inclusive)
+- **Include/Exclude:** Cannot be used together (mutually exclusive)
+
+<Warning>
+If validation fails, broccoli will exit with an error message and non-zero exit code.
+</Warning>

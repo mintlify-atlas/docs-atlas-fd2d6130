@@ -1,0 +1,146 @@
+---
+title: Comparison with Alternatives
+description: Feature and performance comparison between Broccoli and other static file embedding tools
+---
+
+## Why Choose Broccoli?
+
+There are many Go packages for embedding static files, but Broccoli stands out for several key reasons:
+
+- **13-25% smaller binaries** through superior brotli compression
+- **WebAssembly support** - works seamlessly with `wasm/js` architecture
+- **Multiple source directories** - bundle from different locations
+- **No configuration files** - simple `go generate` interface
+- **Optional decompression** - decompress files on-demand or at startup
+- **`.gitignore` support** - respect existing ignore rules
+
+## Comparison with fileb0x
+
+[fileb0x](https://github.com/UnnoTed/fileb0x) is the most feature-complete alternative in the ecosystem. Here's a detailed comparison:
+
+| Feature | fileb0x | broccoli |
+|---------|---------|----------|
+| compression | gzip | brotli (-20% avg.) |
+| optional decompression | yes | yes |
+| compression levels | yes | yes (1-11) |
+| different build tags for each file | yes | no |
+| exclude / ignore files | glob | glob |
+| unexported vars/funcs | optional | optional |
+| virtual memory file system | yes | yes |
+| http file system | yes | yes |
+| replace text in files | yes | no |
+| glob support | yes | yes |
+| regex support | no | no |
+| config file | yes | no |
+| update files remotely | yes | no |
+| .gitignore support | no | yes |
+
+### Key Differences
+
+#### Compression Algorithm
+
+Broccoli uses **brotli** compression, which achieves approximately **20% better compression** than the gzip algorithm used by fileb0x. This translates directly to smaller binary sizes.
+
+#### Configuration
+
+fileb0x requires a separate configuration file, while Broccoli works entirely through command-line flags with `go generate`:
+
+```go
+// Broccoli - inline with go generate
+//go:generate broccoli -src assets -o bundle -var assets
+
+// fileb0x - requires separate config file
+//go:generate fileb0x fileb0x.yml
+```
+
+#### WebAssembly Support
+
+Broccoli explicitly supports `wasm/js` architecture, while fileb0x and most alternatives have issues due to their dependency on the `http` package.
+
+#### .gitignore Integration
+
+Broccoli can parse and respect `.gitignore` files throughout your directory tree:
+
+```bash
+broccoli -src assets -gitignore
+```
+
+This is particularly useful for avoiding accidental inclusion of build artifacts, node_modules, or other ignored files.
+
+## Comparison with Other Tools
+
+The Go ecosystem has many static file embedding solutions. According to [Tim Shannon's comprehensive overview](https://tech.townsourced.com/post/embedding-static-files-in-go/) (note: now outdated by ~2+ years), most alternatives share these characteristics:
+
+- **gzip compression** - standard but less efficient than brotli
+- **WASM incompatibility** - quirks with the `http` package prevent WASM builds
+- **Similar API patterns** - most expose `http.FileSystem` interfaces
+
+![Benchmark comparison showing Broccoli performance](https://i.imgur.com/vB9Miae.png)
+
+<Note>
+Broccoli consistently outperforms existing solutions in [comprehensive benchmarks](https://vcs.aletheia.icu/lads/broccoli-bench). The benchmark methodology is available for review.
+</Note>
+
+## Use Case Recommendations
+
+### Choose Broccoli when you need:
+
+- **Smallest possible binaries** - brotli compression wins
+- **WebAssembly support** - first-class WASM compatibility
+- **Simple workflow** - no config files to maintain
+- **Multiple source directories** - bundle from different locations
+- **gitignore integration** - respect existing ignore patterns
+
+### Consider alternatives when:
+
+- **Per-file build tags** - fileb0x supports different build tags per file
+- **Text replacement** - fileb0x can replace text during bundling
+- **Remote updates** - fileb0x can fetch and update files remotely
+- **Complex configuration** - if you prefer YAML config over CLI flags
+
+## Migration from Other Tools
+
+Migrating to Broccoli is straightforward since it implements standard Go interfaces:
+
+### From go-bindata
+
+```go
+// Old
+//go:generate go-bindata -pkg assets -o assets.go data/
+
+// New
+//go:generate broccoli -src data -o assets -var AssetFS
+```
+
+### From fileb0x
+
+```go
+// Old
+//go:generate fileb0x fileb0x.yml
+
+// New - translate config to flags
+//go:generate broccoli -src public,templates -o bundle -var FS
+```
+
+### From pkger
+
+```go
+// Old
+//go:generate pkger
+
+// New
+//go:generate broccoli -src . -o bundle -var FS
+```
+
+The API is compatible with `http.FileSystem`, so your application code typically requires minimal changes:
+
+```go
+// Works with any http.FileSystem implementation
+http.Handle("/static/", http.FileServer(assets))
+```
+
+## Performance Benchmarks
+
+For detailed performance comparisons, see the [Performance](/performance) page.
+
+For the complete benchmark suite with methodology, visit the [Broccoli benchmark repository](https://vcs.aletheia.icu/lads/broccoli-bench).

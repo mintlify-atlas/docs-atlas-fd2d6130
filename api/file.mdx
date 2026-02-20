@@ -1,0 +1,414 @@
+---
+title: "File"
+description: "File type and methods for reading bundled assets"
+---
+
+## Overview
+
+The `File` type represents a bundled asset in the Broccoli virtual file system. It implements the `http.File` and `os.FileInfo` interfaces, providing comprehensive file operations for compressed assets.
+
+```go
+type File struct {
+    Data  []byte  // File contents (decompressed)
+    Fpath string  // File path relative to root
+    Fname string  // File basename
+    Fsize int64   // File size in bytes
+    Ftime int64   // Modification time (Unix timestamp, negative for directories)
+}
+```
+
+<Note>
+`File` instances should never be created directly. Always access files through `Broccoli.Open()` or other Broccoli methods. Files are automatically created by the `broccoli` CLI tool during code generation.
+</Note>
+
+## File Operations
+
+### Open
+
+Opens the file for reading by decompressing the data if necessary.
+
+```go
+func (f *File) Open() error
+```
+
+<ResponseField name="error" type="error">
+  Returns an error if decompression fails. Returns nil on success.
+</ResponseField>
+
+```go
+file, err := br.Open("styles/main.css")
+if err != nil {
+    log.Fatal(err)
+}
+// File is now open and ready for reading
+```
+
+<Note>
+This method is called automatically by `Broccoli.Open()`. The file data is decompressed on the first read if optional decompression is enabled (via the `-opt` flag during generation).
+</Note>
+
+---
+
+### Read
+
+Reads data from the file into the provided byte slice.
+
+```go
+func (f *File) Read(b []byte) (int, error)
+```
+
+<ParamField path="b" type="[]byte" required>
+  The byte slice to read data into.
+</ParamField>
+
+<ResponseField name="int" type="int">
+  The number of bytes read.
+</ResponseField>
+
+<ResponseField name="error" type="error">
+  Returns `io.EOF` when the buffer is fully drained, `os.ErrClosed` if the file is closed, or nil otherwise.
+</ResponseField>
+
+```go
+file, _ := br.Open("data.json")
+defer file.Close()
+
+data := make([]byte, 1024)
+n, err := file.Read(data)
+if err != nil && err != io.EOF {
+    log.Fatal(err)
+}
+
+fmt.Printf("Read %d bytes\n", n)
+```
+
+---
+
+### Seek
+
+Sets the offset for the next Read operation.
+
+```go
+func (f *File) Seek(offset int64, whence int) (int64, error)
+```
+
+<ParamField path="offset" type="int64" required>
+  The offset to seek to.
+</ParamField>
+
+<ParamField path="whence" type="int" required>
+  The reference point for the offset:
+  - `0` (io.SeekStart): Relative to the origin of the file
+  - `1` (io.SeekCurrent): Relative to the current offset  
+  - `2` (io.SeekEnd): Relative to the end of the file
+</ParamField>
+
+<ResponseField name="int64" type="int64">
+  The new offset from the start of the file.
+</ResponseField>
+
+<ResponseField name="error" type="error">
+  Returns `os.ErrClosed` if the file is closed, or an error if the offset is invalid.
+</ResponseField>
+
+<Tabs>
+  <Tab title="Seek to Start">
+    ```go
+    file, _ := br.Open("data.txt")
+    defer file.Close()
+    
+    // Read some data
+    data := make([]byte, 100)
+    file.Read(data)
+    
+    // Seek back to the beginning
+    file.Seek(0, io.SeekStart)
+    
+    // Read again from the start
+    file.Read(data)
+    ```
+  </Tab>
+  <Tab title="Seek Forward">
+    ```go
+    file, _ := br.Open("data.txt")
+    defer file.Close()
+    
+    // Skip the first 100 bytes
+    file.Seek(100, io.SeekStart)
+    
+    // Read from byte 100 onwards
+    data := make([]byte, 50)
+    file.Read(data)
+    ```
+  </Tab>
+  <Tab title="Seek from End">
+    ```go
+    file, _ := br.Open("data.txt")
+    defer file.Close()
+    
+    // Read the last 100 bytes
+    file.Seek(100, io.SeekEnd)
+    
+    data := make([]byte, 100)
+    file.Read(data)
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+### Close
+
+Closes the file and clears the internal buffer.
+
+```go
+func (f *File) Close() error
+```
+
+<ResponseField name="error" type="error">
+  Returns `os.ErrClosed` if the file is already closed, nil otherwise.
+</ResponseField>
+
+```go
+file, err := br.Open("index.html")
+if err != nil {
+    log.Fatal(err)
+}
+defer file.Close()
+
+// Use the file...
+```
+
+---
+
+### Readdir
+
+Reads the contents of a directory and returns file information for entries.
+
+```go
+func (f *File) Readdir(count int) ([]os.FileInfo, error)
+```
+
+<ParamField path="count" type="int" required>
+  The maximum number of entries to return:
+  - If `count > 0`: Returns at most `count` entries
+  - If `count <= 0`: Returns all entries in a single slice
+</ParamField>
+
+<ResponseField name="[]os.FileInfo" type="[]os.FileInfo">
+  A slice of file information for directory entries.
+</ResponseField>
+
+<ResponseField name="error" type="error">
+  Returns `os.ErrInvalid` if called on a non-directory file, `io.EOF` at the end of the directory, or nil for successful reads.
+</ResponseField>
+
+<Tabs>
+  <Tab title="Read All Entries">
+    ```go
+    dir, _ := br.Open("images")
+    defer dir.Close()
+    
+    // Read all directory entries
+    entries, err := dir.Readdir(-1)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    for _, entry := range entries {
+        fmt.Printf("%s (%d bytes)\n", entry.Name(), entry.Size())
+    }
+    ```
+  </Tab>
+  <Tab title="Read in Batches">
+    ```go
+    dir, _ := br.Open("assets")
+    defer dir.Close()
+    
+    // Read 10 entries at a time
+    for {
+        entries, err := dir.Readdir(10)
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            log.Fatal(err)
+        }
+        
+        for _, entry := range entries {
+            fmt.Println(entry.Name())
+        }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+Subsequent calls to `Readdir` on the same file will yield further entries. The method maintains an internal index to track position in the directory listing.
+</Note>
+
+## FileInfo Methods
+
+The `File` type implements the `os.FileInfo` interface, providing metadata about files.
+
+### Name
+
+Returns the basename of the file.
+
+```go
+func (f *File) Name() string
+```
+
+```go
+info, _ := br.Stat("images/logo.png")
+fmt.Println(info.Name()) // Output: "logo.png"
+```
+
+---
+
+### Size
+
+Returns the size of the file in bytes.
+
+```go
+func (f *File) Size() int64
+```
+
+```go
+info, _ := br.Stat("styles/main.css")
+fmt.Printf("File size: %d bytes\n", info.Size())
+```
+
+---
+
+### Mode
+
+Returns the file mode bits.
+
+```go
+func (f *File) Mode() os.FileMode
+```
+
+<ResponseField name="os.FileMode" type="os.FileMode">
+  Returns `os.ModeDir` for directories, `0444` (read-only) for regular files.
+</ResponseField>
+
+```go
+info, _ := br.Stat("public")
+if info.Mode().IsDir() {
+    fmt.Println("This is a directory")
+}
+```
+
+---
+
+### ModTime
+
+Returns the modification time of the file.
+
+```go
+func (f *File) ModTime() time.Time
+```
+
+```go
+info, _ := br.Stat("index.html")
+fmt.Printf("Last modified: %v\n", info.ModTime())
+```
+
+---
+
+### IsDir
+
+Reports whether the file is a directory.
+
+```go
+func (f *File) IsDir() bool
+```
+
+```go
+info, _ := br.Stat("assets")
+if info.IsDir() {
+    fmt.Println("This is a directory")
+} else {
+    fmt.Println("This is a regular file")
+}
+```
+
+---
+
+### Stat
+
+Returns file information for this file.
+
+```go
+func (f *File) Stat() (os.FileInfo, error)
+```
+
+```go
+file, _ := br.Open("config.json")
+defer file.Close()
+
+info, err := file.Stat()
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("Name: %s, Size: %d\n", info.Name(), info.Size())
+```
+
+---
+
+### Sys
+
+Returns the underlying data source (always nil for Broccoli files).
+
+```go
+func (f *File) Sys() interface{}
+```
+
+```go
+info, _ := br.Stat("data.json")
+fmt.Println(info.Sys()) // Output: nil
+```
+
+## Usage Example
+
+```go
+package main
+
+import (
+    "fmt"
+    "io"
+    "log"
+)
+
+//go:generate broccoli -src=public -o assets -var br
+
+func main() {
+    // Open a file
+    file, err := br.Open("index.html")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer file.Close()
+    
+    // Get file info
+    info, _ := file.Stat()
+    fmt.Printf("Reading %s (%d bytes)\n", info.Name(), info.Size())
+    
+    // Read the entire file
+    data, err := io.ReadAll(file)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    fmt.Printf("Content:\n%s\n", string(data))
+    
+    // Seek back to the beginning
+    file.Seek(0, io.SeekStart)
+    
+    // Read again
+    data, _ = io.ReadAll(file)
+    fmt.Printf("Read again: %d bytes\n", len(data))
+}
+```

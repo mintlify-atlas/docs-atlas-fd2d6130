@@ -1,0 +1,257 @@
+---
+title: Basic Usage
+description: Learn how to use go:generate with broccoli to embed static files in your Go executables
+---
+
+Broccoli uses `go:generate` directives to embed static files in your Go executables using brotli compression. This guide covers the basic workflow for getting started.
+
+## Installation
+
+First, install broccoli:
+
+```bash
+go get -u aletheia.icu/broccoli
+```
+
+## Basic Workflow
+
+<Steps>
+  <Step title="Add the go:generate directive">
+    Add a `go:generate` comment to any Go file in your package:
+
+    ```go
+    package main
+
+    //go:generate broccoli -src=public -o assets
+
+    import (
+        "aletheia.icu/broccoli/fs"
+    )
+    ```
+
+    This tells Go to run broccoli during code generation, creating an `assets.gen.go` file from the `public` directory.
+  </Step>
+
+  <Step title="Run go generate">
+    Execute the code generation:
+
+    ```bash
+    go generate
+    ```
+
+    This creates a `.gen.go` file containing your compressed assets.
+  </Step>
+
+  <Step title="Access your files">
+    Use the generated variable to access your embedded files:
+
+    ```go
+    func main() {
+        // Open a specific file
+        file, err := assets.Open("public/index.html")
+        if err != nil {
+            log.Fatal(err)
+        }
+        defer file.Close()
+
+        // Read the file contents
+        data, err := io.ReadAll(file)
+        if err != nil {
+            log.Fatal(err)
+        }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Command-Line Options
+
+Broccoli supports several options to customize the generation:
+
+### Source Files
+
+Specify input files and directories (comma-separated):
+
+```go
+//go:generate broccoli -src=assets,public,templates
+```
+
+### Output File Name
+
+Customize the generated file name:
+
+```go
+//go:generate broccoli -src=public -o broccoli
+```
+
+This creates `broccoli.gen.go` instead of the default `public.gen.go`.
+
+### Variable Name
+
+Change the exposed variable name:
+
+```go
+//go:generate broccoli -src=assets -o broccoli -var=br
+```
+
+Access it as `br` instead of the default variable name:
+
+```go
+file, err := br.Open("assets/style.css")
+```
+
+## File Filtering
+
+### Include Specific Files
+
+Use wildcards to include only certain file types:
+
+```go
+//go:generate broccoli -src=public -include="*.html,*.css,*.js"
+```
+
+### Exclude Files
+
+Exclude specific file patterns:
+
+```go
+//go:generate broccoli -src=public -exclude="*.wasm,*.map"
+```
+
+### Use .gitignore Rules
+
+Respect .gitignore files in each directory:
+
+```go
+//go:generate broccoli -src=public -gitignore
+```
+
+<Tip>
+  Using `-gitignore` is recommended for most projects to avoid embedding unnecessary files like `.DS_Store`, temporary files, or build artifacts.
+</Tip>
+
+## Working with Files
+
+### Opening Files
+
+```go
+file, err := assets.Open("public/index.html")
+if err != nil {
+    if errors.Is(err, os.ErrNotExist) {
+        // Handle missing file
+    }
+    return err
+}
+defer file.Close()
+```
+
+### Getting File Info
+
+```go
+info, err := assets.Stat("public/index.html")
+if err != nil {
+    return err
+}
+
+fmt.Printf("File: %s, Size: %d bytes\n", info.Name(), info.Size())
+```
+
+### Walking Directory Trees
+
+```go
+func init() {
+    err := assets.Walk("public", func(path string, info os.FileInfo, err error) error {
+        if err != nil {
+            return err
+        }
+        
+        if !info.IsDir() {
+            fmt.Printf("Found: %s (%d bytes)\n", path, info.Size())
+        }
+        
+        return nil
+    })
+    
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+<Warning>
+  File paths in broccoli are normalized automatically. Paths starting with `./` or `/` are handled correctly, but it's best to use relative paths without leading separators.
+</Warning>
+
+## Multiple Source Directories
+
+Embed files from multiple locations:
+
+```go
+//go:generate broccoli -src=public,templates,static -o assets
+
+func main() {
+    // Access files from any source directory
+    assets.Open("public/index.html")
+    assets.Open("templates/email.html")
+    assets.Open("static/logo.png")
+}
+```
+
+## Complete Example
+
+Here's a full working example:
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "os"
+    
+    "aletheia.icu/broccoli/fs"
+)
+
+//go:generate broccoli -src=public -o assets -var=assets
+
+func init() {
+    // List all embedded files at startup
+    assets.Walk("public", func(path string, info os.FileInfo, err error) error {
+        if err != nil {
+            return err
+        }
+        
+        if !info.IsDir() {
+            fmt.Printf("Embedded: %s\n", path)
+        }
+        
+        return nil
+    })
+}
+
+func main() {
+    // Access embedded files
+    file, err := assets.Open("public/index.html")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer file.Close()
+    
+    info, _ := file.Stat()
+    fmt.Printf("Serving %s (%d bytes)\n", info.Name(), info.Size())
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="HTTP File Server" icon="server" href="/guides/http-server">
+    Learn how to serve embedded files over HTTP
+  </Card>
+  <Card title="Development Mode" icon="code" href="/guides/development-mode">
+    Enable rapid development without regenerating
+  </Card>
+  <Card title="Compression Levels" icon="gauge" href="/guides/compression-levels">
+    Optimize compression for your use case
+  </Card>
+</CardGroup>

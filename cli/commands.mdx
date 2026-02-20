@@ -1,0 +1,72 @@
+---
+title: 'CLI Command'
+description: 'Overview of the broccoli CLI command'
+---
+
+## Command Syntax
+
+```bash
+broccoli [options]
+```
+
+Broccoli uses brotli compression to embed a virtual file system in Go executables.
+
+## Basic Usage
+
+The simplest way to use broccoli is through `go:generate` directives in your Go code:
+
+```go
+//go:generate broccoli
+```
+
+This will:
+- Read files from the `public` directory (default)
+- Generate a `public.gen.go` file
+- Expose the file system through a variable named `br`
+
+## Command Structure
+
+Broccoli is designed to be invoked with various flags to customize its behavior. The command follows this general structure:
+
+```bash
+broccoli [input options] [output options] [filter options] [compression options]
+```
+
+### Input Options
+- `-src` - Specify source files and directories
+
+### Output Options
+- `-o` - Set the output file name
+- `-var` - Set the variable name
+- `-build` - Add build tags
+
+### Filter Options
+- `-include` - Include specific file patterns
+- `-exclude` - Exclude specific file patterns
+- `-gitignore` - Respect .gitignore rules
+
+### Compression Options
+- `-opt` - Enable optional decompression
+- `-quality` - Set brotli compression level
+
+<Note>
+If you run `broccoli` without any arguments, it will display the help message and exit.
+</Note>
+
+## Generated Files
+
+Broccoli generates Go source files with the `.gen.go` suffix that contain:
+- Brotli-compressed file data
+- An embedded virtual file system
+- An `http.FileSystem` compatible interface
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="CLI Options" icon="sliders" href="/cli/options">
+    Detailed reference of all available flags
+  </Card>
+  <Card title="Usage Examples" icon="code" href="/cli/examples">
+    Real-world examples and use cases
+  </Card>
+</CardGroup>

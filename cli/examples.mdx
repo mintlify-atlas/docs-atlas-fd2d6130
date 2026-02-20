@@ -1,0 +1,269 @@
+---
+title: 'CLI Usage Examples'
+description: 'Real-world examples of using the broccoli CLI'
+---
+
+## Basic Examples
+
+### Default Behavior
+
+Embed the `public` directory with default settings:
+
+```go
+//go:generate broccoli
+```
+
+This generates `public.gen.go` with a variable named `br`.
+
+### Custom Source Directory
+
+Embed a different directory:
+
+```go
+//go:generate broccoli -src assets
+```
+
+Generates `assets.gen.go` with files from the `assets` directory.
+
+### Custom Output and Variable Names
+
+<Tip>
+This is the example from the source code's help text:
+</Tip>
+
+```go
+//go:generate broccoli -src assets -o broccoli -var broccoli
+```
+
+Generates `broccoli.gen.go` with the variable `broccoli` containing files from `assets`.
+
+## Working with Multiple Sources
+
+### Multiple Directories
+
+Embed multiple directories into one file system:
+
+```go
+//go:generate broccoli -src public,assets,templates
+```
+
+### Mix of Directories and Files
+
+Embed directories plus specific files:
+
+```go
+//go:generate broccoli -src public,config.json,version.txt
+```
+
+## Filtering Files
+
+### Include Specific File Types
+
+<Tip>
+This is the example from the source code's help text:
+</Tip>
+
+```go
+//go:generate broccoli -src public -include="*.wasm"
+```
+
+Only embed WebAssembly files from the `public` directory.
+
+### Include Web Assets Only
+
+```go
+//go:generate broccoli -src assets -include="*.html,*.css,*.js"
+```
+
+Embed only HTML, CSS, and JavaScript files.
+
+### Exclude Large or Unnecessary Files
+
+```go
+//go:generate broccoli -src public -exclude="*.map,*.ts"
+```
+
+Exclude source maps and TypeScript files (useful after bundling).
+
+### Using Gitignore
+
+```go
+//go:generate broccoli -src public -gitignore
+```
+
+Automatically respect `.gitignore` rules when embedding files.
+
+<Note>
+You cannot use both `-include` and `-exclude` at the same time. They are mutually exclusive.
+</Note>
+
+## Compression Settings
+
+### Fast Compression for Development
+
+```go
+//go:generate broccoli -src assets -quality 4
+```
+
+Use lower compression for faster builds during development.
+
+### Maximum Compression for Production
+
+```go
+//go:generate broccoli -src public -quality 11
+```
+
+Use highest compression (default) for production deployments.
+
+### Optional Decompression
+
+```go
+//go:generate broccoli -src assets -opt
+```
+
+Enable lazy decompression to reduce initial memory usage.
+
+## Build Tags
+
+### Platform-Specific Embedding
+
+```go
+//go:generate broccoli -src assets -build "linux,386 darwin,!cgo"
+```
+
+Only compile the embedded files on Linux 32-bit or Darwin without cgo.
+
+### Development vs Production
+
+```go
+// For development builds
+//go:generate broccoli -src dev-assets -o assets -build "dev"
+
+// For production builds  
+//go:generate broccoli -src prod-assets -o assets -build "!dev"
+```
+
+Use different assets based on custom build tags.
+
+### Exclude from Windows Builds
+
+```go
+//go:generate broccoli -src linux-assets -build "!windows"
+```
+
+## Complete Examples
+
+### Web Application with Multiple Asset Types
+
+<CodeGroup>
+
+```go Full Configuration
+//go:generate broccoli -src public -o static -var staticFiles -include="*.html,*.css,*.js,*.png,*.svg" -quality 11
+```
+
+```go With Gitignore
+//go:generate broccoli -src public -o static -var staticFiles -gitignore -quality 11
+```
+
+```go Optimized Memory
+//go:generate broccoli -src public -o static -var staticFiles -opt -quality 11
+```
+
+</CodeGroup>
+
+### WebAssembly Application
+
+```go
+//go:generate broccoli -src dist -include="*.wasm,*.html,*.js" -quality 9 -opt
+```
+
+Embed compiled WebAssembly with supporting files, using slightly faster compression and lazy decompression.
+
+### Multi-Directory Template System
+
+```go
+//go:generate broccoli -src templates,layouts,partials -o views -var templates -include="*.html,*.tmpl"
+```
+
+Embed templates from multiple directories into a single file system.
+
+### Cross-Platform CLI Tool
+
+<CodeGroup>
+
+```go Linux Build
+//go:generate broccoli -src assets/linux -o platform_assets -var assets -build "linux"
+```
+
+```go macOS Build
+//go:generate broccoli -src assets/darwin -o platform_assets -var assets -build "darwin"
+```
+
+```go Windows Build
+//go:generate broccoli -src assets/windows -o platform_assets -var assets -build "windows"
+```
+
+</CodeGroup>
+
+## Command-Line Usage
+
+While broccoli is typically used with `go:generate`, you can also run it directly:
+
+### Direct Invocation
+
+```bash
+broccoli -src public -o static.gen.go -var staticFS
+```
+
+### In Build Scripts
+
+```bash Build Script
+#!/bin/bash
+set -e
+
+# Build frontend assets
+npm run build
+
+# Embed them in Go
+broccoli -src dist -o web.gen.go -var webAssets -quality 11
+
+# Build Go binary
+go build -o myapp
+```
+
+### Makefile Integration
+
+```makefile Makefile
+.PHONY: generate
+generate:
+	broccoli -src public -o static.gen.go -var static -gitignore
+
+generate-dev:
+	broccoli -src public -o static.gen.go -var static -quality 4
+
+.PHONY: build
+build: generate
+	go build -o app
+```
+
+## Tips and Best Practices
+
+<Tip>
+**Development vs Production:** Use lower `-quality` values (4-6) during development for faster builds, and maximum quality (11) for production releases.
+</Tip>
+
+<Tip>
+**Memory Optimization:** If you have many embedded files but only access a few at runtime, use `-opt` to enable lazy decompression.
+</Tip>
+
+<Tip>
+**Gitignore Integration:** Use `-gitignore` to automatically exclude build artifacts, node_modules, and other files you don't want embedded.
+</Tip>
+
+<Warning>
+**Mutually Exclusive Options:** Remember that `-include` and `-exclude` cannot be used together. Choose one based on whether you want to allowlist or denylist files.
+</Warning>
+
+<Note>
+**Automatic File Extension:** The `-o` flag automatically adds `.gen.go` if not present, so `-o static` and `-o static.gen.go` produce the same result.
+</Note>

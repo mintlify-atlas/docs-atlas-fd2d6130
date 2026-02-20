@@ -1,0 +1,103 @@
+---
+title: 'Introduction'
+description: 'Embed static files as a virtual file system in Go executables using brotli compression'
+---
+
+## What is Broccoli?
+
+Broccoli is a CLI tool that uses [brotli compression](https://github.com/google/brotli) to embed a virtual file system of static files inside Go executables. It generates Go code that bundles your assets directly into your binary, making deployment simple and distribution self-contained.
+
+With a single `go:generate` directive, Broccoli compresses and embeds files like HTML, CSS, JavaScript, images, and WASM modules into your Go application.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card
+    title="Superior Compression"
+    icon="bolt"
+  >
+    13-25% smaller binary size compared to gzip-based alternatives thanks to brotli compression
+  </Card>
+  <Card
+    title="Multiple Source Directories"
+    icon="folder-tree"
+  >
+    Bundle files from multiple directories with a single command using comma-separated paths
+  </Card>
+  <Card
+    title="Optional Decompression"
+    icon="memory"
+  >
+    Files are decompressed only when first read, reducing memory usage for large asset bundles
+  </Card>
+  <Card
+    title="WASM Compatible"
+    icon="cube"
+  >
+    Full support for wasm/js architecture, unlike many alternatives that depend on the http package
+  </Card>
+  <Card
+    title="Gitignore Support"
+    icon="filter"
+  >
+    Automatically respect existing .gitignore rules with the -gitignore flag
+  </Card>
+  <Card
+    title="No Config Files"
+    icon="terminal"
+  >
+    Simple command-line interface powered by go:generate - no YAML or JSON configuration required
+  </Card>
+</CardGroup>
+
+## How It Works
+
+1. **Add a go:generate directive** to your Go code specifying source directories
+2. **Run `go generate`** to compress and bundle assets into a .gen.go file
+3. **Use the generated variable** to access files via a virtual file system API
+4. **Build your application** - assets are now embedded in the binary
+
+```go
+//go:generate broccoli -src=public -o assets
+
+func main() {
+    http.ListenAndServe(":8080", assets.Serve("public"))
+}
+```
+
+## Performance Comparison
+
+Broccoli outperforms existing Go asset embedding solutions:
+
+| Feature | fileb0x | broccoli |
+| ------- | ------- | -------- |
+| Compression | gzip | brotli (-20% avg.) |
+| Optional decompression | yes | yes |
+| Compression levels | yes | yes (1-11) |
+| .gitignore support | no | yes |
+| Virtual memory file system | yes | yes |
+| HTTP file system | yes | yes |
+| WASM/JS compatible | limited | yes |
+
+<Note>
+Broccoli achieves an average of **13-25% smaller binary sizes** compared to gzip-based solutions while maintaining compatibility with standard Go interfaces like `http.FileSystem`.
+</Note>
+
+## Get Started
+
+<CardGroup cols={2}>
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Install Broccoli using go get
+  </Card>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Create your first embedded file system in under 5 minutes
+  </Card>
+</CardGroup>

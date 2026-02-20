@@ -1,0 +1,105 @@
+---
+title: 'Installation'
+description: 'Install the Broccoli CLI tool'
+---
+
+## Prerequisites
+
+Before installing Broccoli, ensure you have:
+
+- **Go 1.11 or later** (for Go modules support)
+- **Git** (for go get to fetch the package)
+
+## Install via go get
+
+Install Broccoli globally using the `go get` command:
+
+```bash
+go get -u aletheia.icu/broccoli
+```
+
+This downloads, compiles, and installs the `broccoli` binary to your `$GOPATH/bin` directory.
+
+<Note>
+Make sure `$GOPATH/bin` is in your system's PATH so you can run the `broccoli` command from anywhere.
+</Note>
+
+## Verify Installation
+
+Confirm that Broccoli is installed correctly by running:
+
+```bash
+broccoli
+```
+
+You should see the help output:
+
+```
+Usage: broccoli [options]
+
+Broccoli uses brotli compression to embed a virtual file system in Go executables.
+
+Options:
+	-src folder[,file,file2]
+		The input files and directories, "public" by default.
+	-o
+		Name of the generated file, follows input by default.
+	-var=br
+		Name of the exposed variable, "br" by default.
+	-include *.html,*.css
+		Wildcard for the files to include, no default.
+	-exclude *.wasm
+		Wildcard for the files to exclude, no default.
+	-opt
+		Optional decompression: if enabled, files will only be decompressed
+		on the first time they are read.
+	-gitignore
+		Enables .gitignore rules parsing in each directory, disabled by default.
+	-quality [level]
+		Brotli compression level (1-11), the highest by default.
+```
+
+## Import the FS Package
+
+In your Go code, you'll also need to import the Broccoli file system package:
+
+```go
+import "aletheia.icu/broccoli/fs"
+```
+
+Go modules will automatically fetch this dependency when you run `go build` or `go mod tidy`.
+
+## Alternative: Install from Source
+
+If you prefer to build from source:
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://vcs.aletheia.icu/lads/broccoli
+    cd broccoli
+    ```
+  </Step>
+  
+  <Step title="Build and install">
+    ```bash
+    go install
+    ```
+  </Step>
+  
+  <Step title="Verify installation">
+    ```bash
+    broccoli
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+<Card
+  title="Quickstart Guide"
+  icon="rocket"
+  href="/quickstart"
+>
+  Learn how to embed your first file system with Broccoli
+</Card>

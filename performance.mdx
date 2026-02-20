@@ -1,0 +1,147 @@
+---
+title: Performance
+description: Benchmarks, compression ratios, and performance characteristics of Broccoli
+---
+
+## Overview
+
+Broccoli delivers significant performance improvements over alternative solutions through its use of [brotli compression](https://github.com/google/brotli) instead of the traditional gzip algorithm.
+
+## Binary Size Reduction
+
+The primary performance benefit of Broccoli is its superior compression ratio:
+
+- **13-25% smaller** binary sizes on average compared to gzip-based alternatives
+- **~20% average reduction** compared to fileb0x specifically
+- Real-world improvements depend on your asset composition (text, images, etc.)
+
+<Note>
+Brotli consistently outperforms gzip for static asset embedding, with the most significant gains seen with text-heavy assets like HTML, CSS, and JavaScript files.
+</Note>
+
+## Compression Performance
+
+### CPU Usage During Compression
+
+Broccoli uses parallel compression to maximize throughput during code generation:
+
+- Utilizes all available CPU cores (`runtime.NumCPU()`)
+- Files are compressed concurrently in parallel goroutines
+- Compression happens at build time via `go generate`, not at runtime
+- Quality levels 1-11 available, with level 11 (highest) as default
+
+```go
+// Compression uses all available CPU cores
+n := runtime.NumCPU()
+feed := make(chan *File)
+
+for i := 0; i < n; i++ {
+    go func() {
+        for f := range feed {
+            data, err := f.compress(quality)
+            // ...
+        }
+    }()
+}
+```
+
+### Decompression Performance
+
+Broccoli offers two decompression strategies:
+
+#### Immediate Decompression (Default)
+
+- All files are decompressed when the binary starts
+- Uses parallel decompression across all CPU cores
+- Higher memory usage, but instant file access
+- Best for applications with predictable asset usage
+
+#### Optional Decompression (`-opt` flag)
+
+- Files remain compressed in memory until first access
+- Lower memory footprint at startup
+- Small latency on first file access
+- Ideal for large asset bundles where only some files are used
+
+```go
+//go:generate broccoli -src assets -opt
+```
+
+## WebAssembly Support
+
+Unlike many alternatives, Broccoli is **fully compatible with `wasm/js` architecture**:
+
+- No dependencies on the `http` package that causes WASM incompatibility issues
+- Pure-Go brotli implementation by Andy Balholm (c2go port)
+- Same API works seamlessly across all platforms including WASM
+
+<Note>
+Most existing embedding libraries fail on WASM due to quirks in their use of the `http` package. Broccoli was designed from the ground up to support WASM as a first-class target.
+</Note>
+
+## Benchmark Results
+
+Broccoli outperforms existing solutions in comprehensive benchmarks:
+
+![Broccoli benchmark comparison](https://i.imgur.com/vB9Miae.png)
+
+The [full benchmark suite](https://vcs.aletheia.icu/lads/broccoli-bench) is available for review. The methodology includes:
+
+- Real-world asset bundles (HTML, CSS, JS, images)
+- Compilation time measurements
+- Final binary size comparisons
+- Memory usage profiling
+
+## Performance Tips
+
+### Choose the Right Compression Level
+
+```bash
+# Faster builds, slightly larger binaries (good for development)
+broccoli -src assets -quality 5
+
+# Maximum compression (default, good for production)
+broccoli -src assets -quality 11
+```
+
+### Use Optional Decompression for Large Bundles
+
+If you have a large asset bundle but only use a fraction of files per execution:
+
+```go
+//go:generate broccoli -src assets -opt
+```
+
+### Filter Unnecessary Files
+
+Exclude files you don't need to keep bundles lean:
+
+```go
+//go:generate broccoli -src assets -exclude "*.map,*.md"
+```
+
+### Leverage Development Mode
+
+Avoid re-bundling during development:
+
+```go
+if os.Getenv("DEV") == "true" {
+    assets.Development(true) // Uses filesystem directly
+}
+```
+
+## Comparison with fileb0x
+
+fileb0x is the most feature-complete alternative. Here's how performance compares:
+
+| Metric | fileb0x | Broccoli |
+|--------|---------|----------|
+| Compression algorithm | gzip | brotli |
+| Average binary size reduction | baseline | -20% |
+| Optional decompression | ✓ | ✓ |
+| WASM support | ✗ | ✓ |
+| Parallel compression | Limited | Full CPU utilization |
+
+<Note>
+See the full [feature comparison](/comparison) for a complete breakdown of capabilities.
+</Note>

@@ -1,0 +1,481 @@
+---
+title: Development Mode
+description: Use Development(true) for rapid iteration without regenerating embedded files
+---
+
+Development mode allows broccoli to bypass embedded files and read directly from the local file system. This enables rapid development cycles without running `go generate` after every change.
+
+## Why Development Mode?
+
+During development, constantly regenerating embedded files is slow and disruptive to your workflow:
+
+<Steps>
+  <Step title="Normal workflow (slow)">
+    1. Edit `public/index.html`
+    2. Run `go generate` (slow with large assets)
+    3. Rebuild and run your application
+    4. Test changes
+    5. Repeat
+  </Step>
+
+  <Step title="With development mode (fast)">
+    1. Enable development mode once
+    2. Edit `public/index.html`
+    3. Refresh browser - see changes immediately
+    4. Repeat
+  </Step>
+</Steps>
+
+## Enabling Development Mode
+
+### Basic Usage
+
+Call `Development(true)` before using your embedded files:
+
+```go
+package main
+
+import (
+    "net/http"
+)
+
+//go:generate broccoli -src=public -o assets
+
+func main() {
+    // Enable development mode
+    assets.Development(true)
+    
+    // Files are now read from disk instead of embedded data
+    http.ListenAndServe(":8080", assets.Serve("public"))
+}
+```
+
+### Environment-Based Toggle
+
+The recommended approach is to enable development mode based on environment:
+
+```go
+package main
+
+import (
+    "net/http"
+    "os"
+)
+
+//go:generate broccoli -src=public -o assets
+
+func main() {
+    // Enable development mode when not in production
+    if os.Getenv("PRODUCTION") == "" {
+        assets.Development(true)
+    }
+    
+    http.ListenAndServe(":8080", assets.Serve("public"))
+}
+```
+
+<Tip>
+  This pattern ensures development mode is automatically enabled on your local machine while production builds use embedded files.
+</Tip>
+
+## How It Works
+
+When development mode is enabled, all file operations bypass the embedded bundle:
+
+```go
+// From broccoli.go
+func (br *Broccoli) Open(path string) (http.File, error) {
+    path = normalize(path)
+    
+    if br.devMode {
+        return os.Open(path)  // Read from disk
+    }
+    
+    // Normal mode: use embedded files
+    if f, ok := br.files[path]; ok {
+        if err := f.Open(); err != nil {
+            return nil, err
+        }
+        return f, nil
+    }
+    
+    return nil, os.ErrNotExist
+}
+```
+
+The same applies to `Stat()` and `Walk()`:
+
+```go
+func (br *Broccoli) Stat(path string) (os.FileInfo, error) {
+    path = normalize(path)
+    
+    if br.devMode {
+        f, err := os.Open(path)
+        if err != nil {
+            return nil, err
+        }
+        return f.Stat()
+    }
+    
+    // Use embedded files...
+}
+```
+
+## Development Workflows
+
+### Web Development
+
+Ideal for HTML, CSS, and JavaScript development:
+
+```go
+package main
+
+import (
+    "log"
+    "net/http"
+    "os"
+)
+
+//go:generate broccoli -src=public -o web -var=web
+
+func main() {
+    // Auto-enable in development
+    if os.Getenv("ENV") != "production" {
+        web.Development(true)
+        log.Println("Development mode enabled - files served from disk")
+    }
+    
+    http.ListenAndServe(":8080", web.Serve("public"))
+}
+```
+
+Now you can edit files and refresh:
+
+```bash
+# Terminal 1: Run your app once
+$ go run .
+Development mode enabled - files served from disk
+
+# Terminal 2: Edit files freely
+$ vim public/index.html
+$ vim public/styles.css
+# Changes are immediately visible!
+```
+
+### Template Development
+
+<CodeGroup>
+  ```go Development Mode
+  package main
+
+  import (
+      "html/template"
+      "io"
+      "log"
+      "net/http"
+      "os"
+  )
+
+  //go:generate broccoli -src=templates -o tmpl
+
+  func main() {
+      if os.Getenv("DEV") == "true" {
+          tmpl.Development(true)
+      }
+      
+      http.HandleFunc("/", renderTemplate)
+      http.ListenAndServe(":8080", nil)
+  }
+
+  func renderTemplate(w http.ResponseWriter, r *http.Request) {
+      // Read template from broccoli (or disk in dev mode)
+      file, err := tmpl.Open("templates/index.html")
+      if err != nil {
+          http.Error(w, err.Error(), 500)
+          return
+      }
+      defer file.Close()
+      
+      data, _ := io.ReadAll(file)
+      t, _ := template.New("index").Parse(string(data))
+      
+      t.Execute(w, map[string]string{
+          "Title": "Welcome",
+      })
+  }
+  ```
+
+  ```go Production Mode
+  # Build for production
+  $ PRODUCTION=1 go build
+  
+  # The binary now contains embedded templates
+  # No need for templates/ directory at runtime
+  $ ./myapp
+  ```
+</CodeGroup>
+
+## Testing with Development Mode
+
+Development mode is useful for tests that need to modify files:
+
+```go
+package main
+
+import (
+    "os"
+    "testing"
+    
+    "github.com/stretchr/testify/assert"
+)
+
+func TestDevelopmentMode(t *testing.T) {
+    // Create test instance with development mode
+    bundle, _ := generate()  // Generate fresh bundle
+    br := fs.New(false, bundle)
+    br.Development(true)
+    
+    // Now reads from actual filesystem
+    file, err := br.Open("testdata/index.html")
+    assert.NoError(t, err)
+    defer file.Close()
+    
+    // File is read from disk, not from bundle
+    info, _ := file.Stat()
+    diskInfo, _ := os.Stat("testdata/index.html")
+    
+    assert.Equal(t, diskInfo.Size(), info.Size())
+}
+```
+
+## Configuration Patterns
+
+### Command-Line Flags
+
+```go
+package main
+
+import (
+    "flag"
+    "log"
+    "net/http"
+)
+
+//go:generate broccoli -src=public -o assets
+
+var devMode = flag.Bool("dev", false, "enable development mode")
+
+func main() {
+    flag.Parse()
+    
+    if *devMode {
+        assets.Development(true)
+        log.Println("Running in development mode")
+    }
+    
+    http.ListenAndServe(":8080", assets.Serve("public"))
+}
+```
+
+Usage:
+
+```bash
+# Development
+$ go run . -dev
+
+# Production
+$ go run .
+```
+
+### Build Tags
+
+<CodeGroup>
+  ```go main.go
+  package main
+
+  import "net/http"
+
+  //go:generate broccoli -src=public -o assets
+
+  func main() {
+      // setupDevMode() is defined in separate files
+      setupDevMode()
+      
+      http.ListenAndServe(":8080", assets.Serve("public"))
+  }
+  ```
+
+  ```go dev.go
+  //go:build dev
+
+  package main
+
+  import "log"
+
+  func setupDevMode() {
+      assets.Development(true)
+      log.Println("Development mode enabled")
+  }
+  ```
+
+  ```go prod.go
+  //go:build !dev
+
+  package main
+
+  func setupDevMode() {
+      // Do nothing - use embedded files
+  }
+  ```
+</CodeGroup>
+
+Build with tags:
+
+```bash
+# Development build
+$ go build -tags dev
+
+# Production build
+$ go build
+```
+
+### Configuration Files
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "log"
+    "net/http"
+    "os"
+)
+
+//go:generate broccoli -src=public -o assets
+
+type Config struct {
+    DevMode bool   `json:"dev_mode"`
+    Port    string `json:"port"`
+}
+
+func main() {
+    // Load config
+    config := loadConfig("config.json")
+    
+    if config.DevMode {
+        assets.Development(true)
+        log.Println("Development mode enabled")
+    }
+    
+    http.ListenAndServe(config.Port, assets.Serve("public"))
+}
+
+func loadConfig(path string) Config {
+    file, _ := os.Open(path)
+    defer file.Close()
+    
+    var config Config
+    json.NewDecoder(file).Decode(&config)
+    return config
+}
+```
+
+## Best Practices
+
+<Tip>
+  Always disable development mode in production builds. Embedded files are significantly faster and don't require the source directory to be present.
+</Tip>
+
+### Do's
+
+- **Use environment variables** for automatic mode detection
+- **Log when development mode is enabled** for debugging
+- **Keep source files organized** since dev mode requires the original directory structure
+- **Test both modes** to ensure your app works with embedded files
+
+### Don'ts
+
+<Warning>
+  Don't commit code with `Development(true)` hardcoded. Always make it conditional.
+</Warning>
+
+```go
+// ❌ Bad: Always in development mode
+func main() {
+    assets.Development(true)
+    http.ListenAndServe(":8080", assets.Serve("public"))
+}
+
+// ✅ Good: Conditional based on environment
+func main() {
+    if os.Getenv("PRODUCTION") == "" {
+        assets.Development(true)
+    }
+    http.ListenAndServe(":8080", assets.Serve("public"))
+}
+```
+
+## Debugging Development Mode
+
+Verify development mode is working:
+
+```go
+package main
+
+import (
+    "log"
+    "os"
+)
+
+//go:generate broccoli -src=public -o assets
+
+func main() {
+    assets.Development(true)
+    
+    // Try to open a file
+    file, err := assets.Open("public/test.txt")
+    if err != nil {
+        log.Printf("Error opening file: %v", err)
+        log.Printf("Make sure public/test.txt exists on disk")
+        return
+    }
+    defer file.Close()
+    
+    // Check if file is from disk
+    stat, _ := file.Stat()
+    diskStat, _ := os.Stat("public/test.txt")
+    
+    if stat.ModTime() == diskStat.ModTime() {
+        log.Println("✓ Development mode is working - reading from disk")
+    }
+}
+```
+
+## Performance Comparison
+
+| Operation | Embedded Files | Development Mode |
+|-----------|----------------|------------------|
+| First access | Fast (in memory) | Slow (disk I/O) |
+| Subsequent access | Fast (in memory) | Slow (disk I/O) |
+| Memory usage | Medium (decompressed cache) | Low (no caching) |
+| Requires source files | No | Yes |
+| Build time | Slow (compression) | Fast (no generation) |
+| Hot reload | No | Yes |
+
+<Tip>
+  Use development mode during active development, then disable it for production to get the best performance.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Basic Usage" icon="book" href="/guides/usage">
+    Learn the fundamentals of broccoli
+  </Card>
+  <Card title="HTTP File Server" icon="server" href="/guides/http-server">
+    Serve embedded files over HTTP
+  </Card>
+  <Card title="Compression Levels" icon="gauge" href="/guides/compression-levels">
+    Optimize compression settings
+  </Card>
+</CardGroup>

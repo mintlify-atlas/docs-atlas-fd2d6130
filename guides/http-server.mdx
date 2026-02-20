@@ -1,0 +1,375 @@
+---
+title: HTTP File Server
+description: Learn how to use Broccoli.Serve() to create HTTP file servers with embedded files
+---
+
+Broccoli makes it easy to serve embedded static files over HTTP using the `Serve()` method, which returns a standard `http.Handler` compatible with Go's `net/http` package.
+
+## Basic HTTP Server
+
+The simplest way to serve embedded files:
+
+```go
+package main
+
+import (
+    "log"
+    "net/http"
+    
+    "aletheia.icu/broccoli/fs"
+)
+
+//go:generate broccoli -src=public -o assets -var=assets
+
+func main() {
+    http.ListenAndServe(":8080", assets.Serve("public"))
+}
+```
+
+<Tip>
+  The `Serve()` method returns an `http.Handler` that wraps `http.FileServer`, providing automatic content-type detection, range request support, and directory listing.
+</Tip>
+
+## How Serve() Works
+
+The `Serve()` method creates a Server wrapper with a directory prefix:
+
+```go
+// From server.go
+func (br *Broccoli) Serve(dir string) http.Handler {
+    srv := &Server{
+        br:     br,
+        prefix: strings.Trim(dir, "/"),
+    }
+    return http.FileServer(srv)
+}
+```
+
+When a request comes in, the server prepends the directory prefix to the requested path:
+
+```go
+// HTTP request: GET /index.html
+// Actual file path: public/index.html
+```
+
+## Serving Multiple Directories
+
+<CodeGroup>
+  ```go Using Multiple Handlers
+  package main
+
+  import (
+      "net/http"
+  )
+
+  //go:generate broccoli -src=public,assets -o embedded
+
+  func main() {
+      // Serve public files at root
+      http.Handle("/", embedded.Serve("public"))
+      
+      // Serve assets at /assets/
+      http.Handle("/assets/", http.StripPrefix("/assets/", embedded.Serve("assets")))
+      
+      http.ListenAndServe(":8080", nil)
+  }
+  ```
+
+  ```go Using Custom Mux
+  package main
+
+  import (
+      "net/http"
+  )
+
+  //go:generate broccoli -src=public,static -o fs
+
+  func main() {
+      mux := http.NewServeMux()
+      
+      // API routes
+      mux.HandleFunc("/api/status", handleStatus)
+      
+      // Static files
+      mux.Handle("/static/", http.StripPrefix("/static/", fs.Serve("static")))
+      
+      // Fallback to public (for SPA)
+      mux.Handle("/", fs.Serve("public"))
+      
+      http.ListenAndServe(":8080", mux)
+  }
+
+  func handleStatus(w http.ResponseWriter, r *http.Request) {
+      w.Write([]byte(`{"status":"ok"}`))
+  }
+  ```
+</CodeGroup>
+
+## Single Page Application (SPA) Support
+
+For SPAs like React or Vue, you'll want to serve `index.html` for all routes:
+
+```go
+package main
+
+import (
+    "net/http"
+    "strings"
+)
+
+//go:generate broccoli -src=dist -o spa
+
+func main() {
+    fs := spa.Serve("dist")
+    
+    handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // Check if file exists
+        if _, err := spa.Open("dist" + r.URL.Path); err != nil {
+            // If not, serve index.html for client-side routing
+            if !strings.HasPrefix(r.URL.Path, "/api/") {
+                r.URL.Path = "/index.html"
+            }
+        }
+        fs.ServeHTTP(w, r)
+    })
+    
+    http.ListenAndServe(":8080", handler)
+}
+```
+
+## Middleware Integration
+
+<CodeGroup>
+  ```go Logging Middleware
+  package main
+
+  import (
+      "log"
+      "net/http"
+      "time"
+  )
+
+  //go:generate broccoli -src=public -o assets
+
+  func loggingMiddleware(next http.Handler) http.Handler {
+      return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+          start := time.Now()
+          next.ServeHTTP(w, r)
+          log.Printf("%s %s %v", r.Method, r.URL.Path, time.Since(start))
+      })
+  }
+
+  func main() {
+      handler := loggingMiddleware(assets.Serve("public"))
+      http.ListenAndServe(":8080", handler)
+  }
+  ```
+
+  ```go Authentication Middleware
+  package main
+
+  import (
+      "net/http"
+  )
+
+  //go:generate broccoli -src=admin -o adminAssets
+
+  func authMiddleware(next http.Handler) http.Handler {
+      return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+          // Check authentication
+          token := r.Header.Get("Authorization")
+          if token == "" {
+              http.Error(w, "Unauthorized", http.StatusUnauthorized)
+              return
+          }
+          next.ServeHTTP(w, r)
+      })
+  }
+
+  func main() {
+      handler := authMiddleware(adminAssets.Serve("admin"))
+      http.ListenAndServe(":8080", handler)
+  }
+  ```
+</CodeGroup>
+
+## Testing HTTP Servers
+
+Broccoli works seamlessly with `httptest`:
+
+```go
+package main
+
+import (
+    "io/ioutil"
+    "net/http/httptest"
+    "testing"
+    
+    "github.com/stretchr/testify/assert"
+)
+
+func TestHttpFileServer(t *testing.T) {
+    // Create test server
+    srv := httptest.NewServer(assets.Serve("testdata"))
+    defer srv.Close()
+    
+    // Make request
+    resp, err := srv.Client().Get(srv.URL + "/index.html")
+    assert.NoError(t, err)
+    defer resp.Body.Close()
+    
+    // Read response
+    data, err := ioutil.ReadAll(resp.Body)
+    assert.NoError(t, err)
+    
+    // Compare with original file
+    orig, err := ioutil.ReadFile("testdata/index.html")
+    assert.NoError(t, err)
+    assert.Equal(t, orig, data)
+}
+```
+
+## Advanced Patterns
+
+### Custom Error Pages
+
+```go
+package main
+
+import (
+    "io"
+    "net/http"
+)
+
+//go:generate broccoli -src=public -o assets
+
+func serveWithCustomErrors(w http.ResponseWriter, r *http.Request) {
+    // Try to open the requested file
+    file, err := assets.Open("public" + r.URL.Path)
+    if err != nil {
+        // Serve custom 404 page
+        w.WriteHeader(http.StatusNotFound)
+        notFound, _ := assets.Open("public/404.html")
+        io.Copy(w, notFound)
+        return
+    }
+    defer file.Close()
+    
+    // Serve the file
+    http.ServeContent(w, r, r.URL.Path, file.ModTime(), file)
+}
+
+func main() {
+    http.HandleFunc("/", serveWithCustomErrors)
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Cache Control Headers
+
+```go
+package main
+
+import (
+    "net/http"
+    "strings"
+)
+
+//go:generate broccoli -src=public -o assets
+
+func cacheMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // Set cache headers based on file type
+        if strings.HasSuffix(r.URL.Path, ".html") {
+            w.Header().Set("Cache-Control", "no-cache")
+        } else if strings.HasSuffix(r.URL.Path, ".js") || strings.HasSuffix(r.URL.Path, ".css") {
+            w.Header().Set("Cache-Control", "public, max-age=31536000")
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+
+func main() {
+    handler := cacheMiddleware(assets.Serve("public"))
+    http.ListenAndServe(":8080", handler)
+}
+```
+
+## Performance Considerations
+
+<Tip>
+  Broccoli files are embedded in the binary at compile time, so there's no disk I/O during runtime. This makes serving files extremely fast compared to reading from disk.
+</Tip>
+
+### Optional Decompression
+
+For even better runtime performance, use optional decompression:
+
+```go
+//go:generate broccoli -src=public -opt
+```
+
+With `-opt`, files are decompressed only once on first access and cached in memory.
+
+### Compression Levels
+
+Balance binary size vs. generation time:
+
+```go
+// Faster generation, larger binary
+//go:generate broccoli -src=public -quality=4
+
+// Slower generation, smaller binary
+//go:generate broccoli -src=public -quality=11
+```
+
+<Warning>
+  The HTTP server serves pre-compressed brotli files from your binary. The browser handles decompression automatically. Don't confuse this with HTTP compression middleware.
+</Warning>
+
+## Complete Example
+
+A production-ready HTTP server with broccoli:
+
+```go
+package main
+
+import (
+    "log"
+    "net/http"
+    "os"
+    "time"
+)
+
+//go:generate broccoli -src=public -o assets -opt -gitignore
+
+func main() {
+    // Enable development mode in non-production
+    if os.Getenv("PRODUCTION") == "" {
+        assets.Development(true)
+    }
+    
+    // Create server with timeouts
+    srv := &http.Server{
+        Addr:         ":8080",
+        Handler:      assets.Serve("public"),
+        ReadTimeout:  15 * time.Second,
+        WriteTimeout: 15 * time.Second,
+        IdleTimeout:  60 * time.Second,
+    }
+    
+    log.Printf("Server starting on %s", srv.Addr)
+    log.Fatal(srv.ListenAndServe())
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Development Mode" icon="code" href="/guides/development-mode">
+    Speed up development with live file system access
+  </Card>
+  <Card title="Compression Levels" icon="gauge" href="/guides/compression-levels">
+    Optimize binary size and generation time
+  </Card>
+</CardGroup>

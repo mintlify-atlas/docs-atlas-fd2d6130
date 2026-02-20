@@ -1,0 +1,421 @@
+---
+title: FAQ
+description: Frequently asked questions about Broccoli
+---
+
+## General Questions
+
+<Accordion title="What is Broccoli?">
+Broccoli is a Go tool that embeds static files into your Go binaries using brotli compression. It creates a virtual file system from your assets (HTML, CSS, JavaScript, images, etc.) and bundles them directly into your compiled executable.
+
+This eliminates the need to distribute separate asset files alongside your binary.
+</Accordion>
+
+<Accordion title="How is Broccoli different from other embedding tools?">
+Broccoli has several key advantages:
+
+- **13-25% smaller binaries** through brotli compression (vs. gzip)
+- **WebAssembly support** - works with `wasm/js` architecture
+- **No config files** - simple `go generate` command-line interface
+- **`.gitignore` support** - automatically respects your ignore rules
+- **Multiple source directories** - bundle from different locations
+
+See the [comparison page](/comparison) for a detailed breakdown.
+</Accordion>
+
+<Accordion title="Is Broccoli production-ready?">
+Yes. Broccoli has been used in production applications. It includes comprehensive tests and has a stable API that implements standard Go interfaces like `http.FileSystem`.
+</Accordion>
+
+<Accordion title="What license is Broccoli released under?">
+Broccoli is released under the [MIT License](https://vcs.aletheia.icu/lads/broccoli/src/branch/master/LICENSE).
+</Accordion>
+
+---
+
+## Installation and Setup
+
+<Accordion title="How do I install Broccoli?">
+Install Broccoli using `go install`:
+
+```bash
+go install aletheia.icu/broccoli@latest
+```
+
+Then import the library in your code:
+
+```go
+import "aletheia.icu/broccoli/fs"
+```
+
+See the [Installation guide](/installation) for more details.
+</Accordion>
+
+<Accordion title="What Go version is required?">
+Broccoli works with modern Go versions. It was developed using Go modules and requires Go 1.11 or later for module support.
+
+For best compatibility, use Go 1.16+ which has native embed support that you can use alongside or instead of Broccoli depending on your needs.
+</Accordion>
+
+<Accordion title="Can I use Broccoli with go modules?">
+Yes! Broccoli fully supports Go modules. Simply add it to your dependencies:
+
+```bash
+go get aletheia.icu/broccoli
+```
+
+The `go generate` command will work seamlessly with module-based projects.
+</Accordion>
+
+---
+
+## Usage
+
+<Accordion title="How do I embed files with Broccoli?">
+Use `go generate` with the broccoli command:
+
+```go
+package main
+
+import "aletheia.icu/broccoli/fs"
+
+//go:generate broccoli -src assets -o bundle -var assets
+
+func main() {
+    http.ListenAndServe(":8080", assets.Serve("assets"))
+}
+```
+
+Then run:
+
+```bash
+go generate
+go build
+```
+
+See the [Quick Start guide](/quickstart) for a complete example.
+</Accordion>
+
+<Accordion title="Can I bundle multiple directories?">
+Yes! Use comma-separated paths:
+
+```go
+//go:generate broccoli -src public,templates,static -o assets
+```
+
+All files from all directories will be bundled into a single virtual file system.
+</Accordion>
+
+<Accordion title="How do I exclude certain files?">
+Use the `-exclude` flag with glob patterns:
+
+```bash
+broccoli -src assets -exclude "*.map,*.md,*.txt"
+```
+
+Or use the `-gitignore` flag to automatically respect `.gitignore` files:
+
+```bash
+broccoli -src assets -gitignore
+```
+
+See [CLI Options](/cli/options) for all filtering options.
+</Accordion>
+
+<Accordion title="Can I include only specific file types?">
+Yes, use the `-include` flag:
+
+```bash
+broccoli -src assets -include "*.html,*.css,*.js"
+```
+
+This will only bundle files matching the specified patterns.
+</Accordion>
+
+<Accordion title="How do I access embedded files at runtime?">
+Broccoli implements `http.FileSystem`, so you can use standard Go file operations:
+
+```go
+// Open a file
+f, err := assets.Open("index.html")
+
+// Serve over HTTP
+http.Handle("/static/", http.FileServer(assets))
+
+// Walk all files
+assets.Walk("public", func(path string, info os.FileInfo, err error) error {
+    fmt.Println(path)
+    return nil
+})
+```
+
+See the [API Reference](/api/broccoli) for all available methods.
+</Accordion>
+
+---
+
+## Performance
+
+<Accordion title="How much smaller are binaries with brotli compression?">
+Broccoli achieves **13-25% smaller** binary sizes on average compared to gzip-based alternatives like fileb0x.
+
+The exact savings depend on your asset types:
+- Text files (HTML, CSS, JS): 20-30% smaller
+- Already compressed files (PNG, JPEG): 5-15% smaller
+
+See the [Performance page](/performance) for detailed benchmarks.
+</Accordion>
+
+<Accordion title="Does compression slow down my builds?">
+Compression happens at build time via `go generate`, not when compiling your Go code. Broccoli uses parallel compression across all CPU cores to maximize speed.
+
+For faster development builds, lower the compression level:
+
+```bash
+broccoli -src assets -quality 5
+```
+
+Or use development mode to skip bundling entirely:
+
+```go
+if os.Getenv("DEV") == "true" {
+    assets.Development(true)
+}
+```
+</Accordion>
+
+<Accordion title="What is optional decompression?">
+Optional decompression (`-opt` flag) keeps files compressed in memory until they're first accessed:
+
+```bash
+broccoli -src assets -opt
+```
+
+**Benefits:**
+- Lower memory usage at startup
+- Faster startup time
+- Only decompress files you actually use
+
+**Trade-offs:**
+- Small latency on first file access
+- Thread-safety considerations for concurrent access
+
+See [CLI Options](/cli/options) for more details.
+</Accordion>
+
+<Accordion title="Does Broccoli support WebAssembly?">
+Yes! Unlike most alternatives, Broccoli explicitly supports the `wasm/js` architecture. 
+
+This was a primary design goal, as many existing libraries fail on WASM due to quirks with the `http` package. Broccoli uses a pure-Go brotli implementation that works seamlessly with WASM.
+
+```bash
+GOOS=js GOARCH=wasm go build
+```
+
+See [Performance - WebAssembly Support](/performance#webassembly-support) for more information.
+</Accordion>
+
+---
+
+## Development
+
+<Accordion title="Can I use the filesystem during development instead of bundling?">
+Yes! Use development mode:
+
+```go
+package main
+
+import (
+    "os"
+    "aletheia.icu/broccoli/fs"
+)
+
+//go:generate broccoli -src public -o bundle -var assets
+
+func main() {
+    if os.Getenv("DEV") == "true" {
+        assets.Development(true)
+    }
+    
+    http.ListenAndServe(":8080", assets.Serve("public"))
+}
+```
+
+When `DEV=true`, Broccoli reads from the filesystem directly, allowing you to see changes without re-running `go generate`.
+</Accordion>
+
+<Accordion title="How do I debug what files are being included?">
+Use the `-v` (verbose) flag:
+
+```bash
+go generate -v
+```
+
+Or add verbose output to your generate directive:
+
+```go
+//go:generate broccoli -src assets -v
+```
+
+This shows:
+- Files being processed
+- Files being ignored
+- Total bytes read and compressed
+
+See [Troubleshooting](/troubleshooting) for more debugging tips.
+</Accordion>
+
+<Accordion title="Can I have multiple bundles in the same package?">
+Yes, use different variable names:
+
+```go
+//go:generate broccoli -src public -o public -var publicFS
+//go:generate broccoli -src templates -o templates -var templateFS
+
+func main() {
+    http.Handle("/static/", http.FileServer(publicFS))
+    // Use templateFS separately
+}
+```
+
+Each bundle is independent and can have different settings.
+</Accordion>
+
+---
+
+## Advanced
+
+<Accordion title="What compression levels are available?">
+Brotli compression levels range from 1-11:
+
+- **1-4**: Fast compression, larger output (good for development)
+- **5-7**: Balanced speed and compression
+- **8-11**: Maximum compression, slower (good for production)
+
+Default is 11 (highest compression):
+
+```bash
+broccoli -src assets -quality 6  # Faster builds
+```
+</Accordion>
+
+<Accordion title="Can I generate unexported variables?">
+Yes, just use a lowercase variable name:
+
+```go
+//go:generate broccoli -src assets -var privateAssets
+```
+
+This generates:
+
+```go
+var privateAssets = fs.New(...)
+```
+
+Useful for internal package assets.
+</Accordion>
+
+<Accordion title="How does .gitignore support work?">
+When you enable `-gitignore`, Broccoli:
+
+1. Walks the directory tree
+2. Finds all `.gitignore` files
+3. Parses ignore patterns from each file
+4. Applies rules when bundling
+
+This respects your existing ignore rules and prevents accidental inclusion of:
+- Build artifacts
+- node_modules
+- Local configuration files
+- Other ignored content
+
+```bash
+broccoli -src assets -gitignore
+```
+</Accordion>
+
+<Accordion title="Can I use Broccoli with other file embedding tools?">
+Yes! Broccoli implements standard Go interfaces, so you can use it alongside:
+
+- `embed` package (Go 1.16+)
+- Other embedding libraries
+- Filesystem abstractions
+
+Each can handle different parts of your application:
+
+```go
+//go:embed static/*
+var staticFS embed.FS
+
+//go:generate broccoli -src templates -var templateFS
+
+func main() {
+    // Use staticFS for some assets
+    // Use templateFS for others
+}
+```
+</Accordion>
+
+<Accordion title="Is the generated code safe to commit?">
+Yes! The generated `.gen.go` files are safe to commit to version control. This allows:
+
+- Building without running `go generate`
+- Reproducible builds
+- CI/CD without extra dependencies
+
+However, some teams prefer to gitignore `.gen.go` files and regenerate them in CI. Both approaches work.
+</Accordion>
+
+---
+
+## Troubleshooting
+
+<Accordion title="I'm getting 'file not found' errors at runtime">
+This usually means the file wasn't included in the bundle. Common causes:
+
+1. File was excluded by `-include` or `-exclude` patterns
+2. File was ignored by `.gitignore` (if using `-gitignore`)
+3. Path mismatch (check path normalization)
+
+Debug by walking the bundle:
+
+```go
+assets.Walk("", func(path string, info os.FileInfo, err error) error {
+    fmt.Println("Embedded:", path)
+    return nil
+})
+```
+
+See [Troubleshooting](/troubleshooting) for more solutions.
+</Accordion>
+
+<Accordion title="My binary is huge even with brotli compression">
+Check if you're accidentally including:
+
+1. Binary files that don't compress well
+2. Already compressed formats (videos, compressed images)
+3. Build artifacts or dependencies
+
+Use `-exclude` to filter them:
+
+```bash
+broccoli -src assets -exclude "*.mp4,*.zip,node_modules/**"
+```
+
+Or use `-gitignore` to respect your ignore rules:
+
+```bash
+broccoli -src assets -gitignore
+```
+</Accordion>
+
+<Accordion title="Where can I get more help?">
+Resources:
+
+- [Troubleshooting guide](/troubleshooting) - Common issues and solutions
+- [CLI Examples](/cli/examples) - Real-world usage patterns
+- [API Reference](/api/broccoli) - Complete API documentation
+- [Broccoli repository](https://vcs.aletheia.icu/lads/broccoli) - Source code and issue tracker
+
+For bugs or feature requests, please open an issue on the repository.
+</Accordion>
